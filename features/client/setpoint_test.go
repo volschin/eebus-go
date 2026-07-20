@@ -28,7 +28,7 @@ type SetpointSuite struct {
 var _ shipapi.ShipConnectionDataWriterInterface = (*SetpointSuite)(nil)
 
 func (s *SetpointSuite) WriteShipMessageWithPayload(message []byte) {
-	s.sentMessage = message
+	s.sentMessage = append(s.sentMessage[:0], message...)
 }
 
 func (s *SetpointSuite) BeforeTest(suiteName, testName string) {
@@ -94,4 +94,51 @@ func (s *SetpointSuite) Test_WriteSetpointListData() {
 	counter, err = s.setpoint.WriteSetpointListData(data)
 	assert.Nil(s.T(), err)
 	assert.NotNil(s.T(), counter)
+}
+
+func (s *SetpointSuite) Test_WriteSetpointListData_PreservesCachedEntries() {
+	remote := s.remoteEntity.FeatureOfTypeAndRole(model.FeatureTypeTypeSetpoint, model.RoleTypeServer)
+	cached := &model.SetpointListDataType{SetpointData: []model.SetpointDataType{
+		{SetpointId: util.Ptr(model.SetpointIdType(1)), Value: model.NewScaledNumberType(20)},
+		{SetpointId: util.Ptr(model.SetpointIdType(2)), Value: model.NewScaledNumberType(23)},
+	}}
+	_, updateErr := remote.UpdateData(true, model.FunctionTypeSetpointListData, cached, nil, nil)
+	assert.Nil(s.T(), updateErr)
+
+	_, err := s.setpoint.WriteSetpointListData([]model.SetpointDataType{{
+		SetpointId: util.Ptr(model.SetpointIdType(1)), Value: model.NewScaledNumberType(21),
+	}})
+	assert.NoError(s.T(), err)
+
+	cmd := commandFromMessage(s.T(), s.sentMessage)
+	assert.Empty(s.T(), cmd.Filter)
+	assert.NotNil(s.T(), cmd.SetpointListData)
+	assert.Len(s.T(), cmd.SetpointListData.SetpointData, 2)
+	assert.Equal(s.T(), 21.0, cmd.SetpointListData.SetpointData[0].Value.GetValue())
+	assert.Equal(s.T(), 23.0, cmd.SetpointListData.SetpointData[1].Value.GetValue())
+}
+
+func (s *SetpointSuite) Test_WriteSetpointListData_PartialPayload() {
+	localEntity, remoteEntity := setupFeatures(
+		s.T(),
+		s,
+		[]featureFunctions{{
+			featureType: model.FeatureTypeTypeSetpoint,
+			functions:   []model.FunctionType{model.FunctionTypeSetpointListData},
+			partial:     true,
+		}},
+	)
+	setpoint, err := NewSetpoint(localEntity, remoteEntity)
+	assert.NoError(s.T(), err)
+
+	_, err = setpoint.WriteSetpointListData([]model.SetpointDataType{{
+		SetpointId: util.Ptr(model.SetpointIdType(1)), Value: model.NewScaledNumberType(21),
+	}})
+	assert.NoError(s.T(), err)
+
+	cmd := commandFromMessage(s.T(), s.sentMessage)
+	assert.Len(s.T(), cmd.Filter, 1)
+	assert.NotNil(s.T(), cmd.Filter[0].CmdControl.Partial)
+	assert.Equal(s.T(), model.FunctionTypeSetpointListData, *cmd.Function)
+	assert.Len(s.T(), cmd.SetpointListData.SetpointData, 1)
 }

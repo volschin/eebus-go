@@ -100,24 +100,12 @@ func (h *Hvac) WriteHvacOverrunListData(
 		return nil, api.ErrMissingData
 	}
 
-	// the remote server has to advertise the write operation for this function
-	operation := h.featureRemote.Operations()[model.FunctionTypeHvacOverrunListData]
-	if operation == nil || !operation.Write() {
-		return nil, api.ErrNotSupported
-	}
-
-	// use a partial write when the server supports it, otherwise merge the
-	// modified entries into the cached list and write the complete list, so
-	// unrelated overruns are not dropped by a full replacement
-	filters := []model.FilterType{*model.NewFilterTypePartial()}
-	if !operation.WritePartial() {
-		filters = nil
-		updateData := &model.HvacOverrunListDataType{
-			HvacOverrunData: data,
-		}
-		if mergedData, err := h.featureRemote.UpdateData(false, model.FunctionTypeHvacOverrunListData, updateData, nil, nil); err == nil {
-			data = mergedData.([]model.HvacOverrunDataType)
-		}
+	updateData := &model.HvacOverrunListDataType{HvacOverrunData: data}
+	data, filters, err := prepareListWrite(
+		h.featureRemote, model.FunctionTypeHvacOverrunListData, updateData, data,
+	)
+	if err != nil {
+		return nil, err
 	}
 
 	cmd := model.CmdType{
@@ -142,24 +130,12 @@ func (h *Hvac) WriteHvacSystemFunctionListData(
 		return nil, api.ErrMissingData
 	}
 
-	// the remote server has to advertise the write operation for this function
-	operation := h.featureRemote.Operations()[model.FunctionTypeHvacSystemFunctionListData]
-	if operation == nil || !operation.Write() {
-		return nil, api.ErrNotSupported
-	}
-
-	// use a partial write when the server supports it, otherwise merge the
-	// modified entries into the cached list and write the complete list, so
-	// unrelated system functions are not dropped by a full replacement
-	filters := []model.FilterType{*model.NewFilterTypePartial()}
-	if !operation.WritePartial() {
-		filters = nil
-		updateData := &model.HvacSystemFunctionListDataType{
-			HvacSystemFunctionData: data,
-		}
-		if mergedData, err := h.featureRemote.UpdateData(false, model.FunctionTypeHvacSystemFunctionListData, updateData, nil, nil); err == nil {
-			data = mergedData.([]model.HvacSystemFunctionDataType)
-		}
+	updateData := &model.HvacSystemFunctionListDataType{HvacSystemFunctionData: data}
+	data, filters, err := prepareListWrite(
+		h.featureRemote, model.FunctionTypeHvacSystemFunctionListData, updateData, data,
+	)
+	if err != nil {
+		return nil, err
 	}
 
 	cmd := model.CmdType{
