@@ -28,7 +28,7 @@ type HvacSuite struct {
 var _ shipapi.ShipConnectionDataWriterInterface = (*HvacSuite)(nil)
 
 func (s *HvacSuite) WriteShipMessageWithPayload(message []byte) {
-	s.sentMessage = message
+	s.sentMessage = append(s.sentMessage[:0], message...)
 }
 
 func (s *HvacSuite) BeforeTest(suiteName, testName string) {
@@ -140,6 +140,50 @@ func (s *HvacSuite) Test_WriteHvacOverrunListData() {
 	assert.NotNil(s.T(), counter)
 }
 
+func (s *HvacSuite) Test_WriteHvacOverrunListData_PreservesCachedEntries() {
+	remote := s.remoteEntity.FeatureOfTypeAndRole(model.FeatureTypeTypeHvac, model.RoleTypeServer)
+	cached := &model.HvacOverrunListDataType{HvacOverrunData: []model.HvacOverrunDataType{
+		{OverrunId: util.Ptr(model.HvacOverrunIdType(1)), OverrunStatus: util.Ptr(model.HvacOverrunStatusTypeInactive)},
+		{OverrunId: util.Ptr(model.HvacOverrunIdType(2)), OverrunStatus: util.Ptr(model.HvacOverrunStatusTypeFinished)},
+	}}
+	_, updateErr := remote.UpdateData(true, model.FunctionTypeHvacOverrunListData, cached, nil, nil)
+	assert.Nil(s.T(), updateErr)
+
+	_, err := s.hvac.WriteHvacOverrunListData([]model.HvacOverrunDataType{{
+		OverrunId: util.Ptr(model.HvacOverrunIdType(1)), OverrunStatus: util.Ptr(model.HvacOverrunStatusTypeActive),
+	}})
+	assert.NoError(s.T(), err)
+
+	cmd := commandFromMessage(s.T(), s.sentMessage)
+	assert.Empty(s.T(), cmd.Filter)
+	assert.NotNil(s.T(), cmd.HvacOverrunListData)
+	assert.Len(s.T(), cmd.HvacOverrunListData.HvacOverrunData, 2)
+	assert.Equal(s.T(), model.HvacOverrunStatusTypeActive, *cmd.HvacOverrunListData.HvacOverrunData[0].OverrunStatus)
+	assert.Equal(s.T(), model.HvacOverrunStatusTypeFinished, *cmd.HvacOverrunListData.HvacOverrunData[1].OverrunStatus)
+}
+
+func (s *HvacSuite) Test_WriteHvacSystemFunctionListData_PreservesCachedEntries() {
+	remote := s.remoteEntity.FeatureOfTypeAndRole(model.FeatureTypeTypeHvac, model.RoleTypeServer)
+	cached := &model.HvacSystemFunctionListDataType{HvacSystemFunctionData: []model.HvacSystemFunctionDataType{
+		{SystemFunctionId: util.Ptr(model.HvacSystemFunctionIdType(1)), CurrentOperationModeId: util.Ptr(model.HvacOperationModeIdType(1))},
+		{SystemFunctionId: util.Ptr(model.HvacSystemFunctionIdType(2)), CurrentOperationModeId: util.Ptr(model.HvacOperationModeIdType(3))},
+	}}
+	_, updateErr := remote.UpdateData(true, model.FunctionTypeHvacSystemFunctionListData, cached, nil, nil)
+	assert.Nil(s.T(), updateErr)
+
+	_, err := s.hvac.WriteHvacSystemFunctionListData([]model.HvacSystemFunctionDataType{{
+		SystemFunctionId: util.Ptr(model.HvacSystemFunctionIdType(1)), CurrentOperationModeId: util.Ptr(model.HvacOperationModeIdType(2)),
+	}})
+	assert.NoError(s.T(), err)
+
+	cmd := commandFromMessage(s.T(), s.sentMessage)
+	assert.Empty(s.T(), cmd.Filter)
+	assert.NotNil(s.T(), cmd.HvacSystemFunctionListData)
+	assert.Len(s.T(), cmd.HvacSystemFunctionListData.HvacSystemFunctionData, 2)
+	assert.Equal(s.T(), model.HvacOperationModeIdType(2), *cmd.HvacSystemFunctionListData.HvacSystemFunctionData[0].CurrentOperationModeId)
+	assert.Equal(s.T(), model.HvacOperationModeIdType(3), *cmd.HvacSystemFunctionListData.HvacSystemFunctionData[1].CurrentOperationModeId)
+}
+
 func (s *HvacSuite) Test_WriteHvacSystemFunctionListData_Partial() {
 	localEntity, remoteEntity := setupFeatures(
 		s.T(),
@@ -167,4 +211,11 @@ func (s *HvacSuite) Test_WriteHvacSystemFunctionListData_Partial() {
 	counter, err := hvac.WriteHvacSystemFunctionListData(data)
 	assert.Nil(s.T(), err)
 	assert.NotNil(s.T(), counter)
+
+	cmd := commandFromMessage(s.T(), s.sentMessage)
+	assert.Len(s.T(), cmd.Filter, 1)
+	assert.NotNil(s.T(), cmd.Filter[0].CmdControl)
+	assert.NotNil(s.T(), cmd.Filter[0].CmdControl.Partial)
+	assert.Equal(s.T(), model.FunctionTypeHvacSystemFunctionListData, *cmd.Function)
+	assert.Len(s.T(), cmd.HvacSystemFunctionListData.HvacSystemFunctionData, 1)
 }

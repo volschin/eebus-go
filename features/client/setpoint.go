@@ -68,24 +68,12 @@ func (s *Setpoint) WriteSetpointListData(
 		return nil, api.ErrMissingData
 	}
 
-	// the remote server has to advertise the write operation for this function
-	operation := s.featureRemote.Operations()[model.FunctionTypeSetpointListData]
-	if operation == nil || !operation.Write() {
-		return nil, api.ErrNotSupported
-	}
-
-	// use a partial write when the server supports it, otherwise merge the
-	// modified entries into the cached list and write the complete list, so
-	// unrelated setpoints are not dropped by a full replacement
-	filters := []model.FilterType{*model.NewFilterTypePartial()}
-	if !operation.WritePartial() {
-		filters = nil
-		updateData := &model.SetpointListDataType{
-			SetpointData: data,
-		}
-		if mergedData, err := s.featureRemote.UpdateData(false, model.FunctionTypeSetpointListData, updateData, nil, nil); err == nil {
-			data = mergedData.([]model.SetpointDataType)
-		}
+	updateData := &model.SetpointListDataType{SetpointData: data}
+	data, filters, err := prepareListWrite(
+		s.featureRemote, model.FunctionTypeSetpointListData, updateData, data,
+	)
+	if err != nil {
+		return nil, err
 	}
 
 	cmd := model.CmdType{
