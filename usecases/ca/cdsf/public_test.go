@@ -1,8 +1,12 @@
 package cdsf
 
 import (
+	"errors"
+	"testing"
+
 	"github.com/enbility/eebus-go/api"
 	ucapi "github.com/enbility/eebus-go/usecases/api"
+	spineapi "github.com/enbility/spine-go/api"
 	"github.com/enbility/spine-go/model"
 	"github.com/enbility/spine-go/util"
 	"github.com/stretchr/testify/assert"
@@ -106,6 +110,31 @@ func (s *CaCDSFSuite) Test_WriteOperationMode_UnrelatedMode() {
 	assert.NotNil(s.T(), err)
 }
 
+func (s *CaCDSFSuite) Test_WriteOperationMode_AmbiguousRelatedModeType() {
+	s.addHvacData(util.Ptr(true))
+	rFeature := s.remoteDevice.FeatureByEntityTypeAndRole(s.dhwCircuitEntity, model.FeatureTypeTypeHvac, model.RoleTypeServer)
+
+	modeData := &model.HvacOperationModeDescriptionListDataType{
+		HvacOperationModeDescriptionData: []model.HvacOperationModeDescriptionDataType{
+			{OperationModeId: util.Ptr(model.HvacOperationModeIdType(2)), OperationModeType: util.Ptr(model.HvacOperationModeTypeTypeOn)},
+			{OperationModeId: util.Ptr(model.HvacOperationModeIdType(4)), OperationModeType: util.Ptr(model.HvacOperationModeTypeTypeOn)},
+		},
+	}
+	_, fErr := rFeature.UpdateData(true, model.FunctionTypeHvacOperationModeDescriptionListData, modeData, nil, nil)
+	assert.Nil(s.T(), fErr)
+	relationData := &model.HvacSystemFunctionOperationModeRelationListDataType{
+		HvacSystemFunctionOperationModeRelationData: []model.HvacSystemFunctionOperationModeRelationDataType{{
+			SystemFunctionId: util.Ptr(model.HvacSystemFunctionIdType(1)),
+			OperationModeId:  []model.HvacOperationModeIdType{2, 4},
+		}},
+	}
+	_, fErr = rFeature.UpdateData(true, model.FunctionTypeHvacSystemFunctionOperationModeRelationListData, relationData, nil, nil)
+	assert.Nil(s.T(), fErr)
+
+	_, err := s.sut.WriteOperationMode(s.dhwCircuitEntity, ucapi.HvacOperationModeTypeOn, nil)
+	assert.ErrorIs(s.T(), err, api.ErrDataNotAvailable)
+}
+
 func (s *CaCDSFSuite) Test_StartStopOneTimeDhw() {
 	_, err := s.sut.StartOneTimeDhw(s.mockRemoteEntity, nil)
 	assert.NotNil(s.T(), err)
@@ -172,6 +201,75 @@ func (s *CaCDSFSuite) Test_WriteOperationMode_WriteNotAdvertised() {
 	// the write must be rejected when the remote does not advertise Write()
 	_, err := s.sut.WriteOperationMode(s.dhwCircuitEntity, ucapi.HvacOperationModeTypeOn, nil)
 	assert.ErrorIs(s.T(), err, api.ErrNotSupported)
+}
+
+func (s *CaCDSFSuite) Test_WriteOverrun_WriteNotAdvertised() {
+	s.addHvacData(util.Ptr(true))
+	s.addOverrunData(true)
+	rFeature := s.remoteDevice.FeatureByEntityTypeAndRole(s.dhwCircuitEntity, model.FeatureTypeTypeHvac, model.RoleTypeServer)
+	rFeature.SetOperations([]model.FunctionPropertyType{{
+		Function:           util.Ptr(model.FunctionTypeHvacOverrunListData),
+		PossibleOperations: &model.PossibleOperationsType{Read: &model.PossibleOperationsReadType{}},
+	}})
+
+	_, err := s.sut.StartOneTimeDhw(s.dhwCircuitEntity, nil)
+	assert.ErrorIs(s.T(), err, api.ErrNotSupported)
+}
+
+func (s *CaCDSFSuite) Test_WriteOverrun_AmbiguousOverrun() {
+	s.addHvacData(util.Ptr(true))
+	s.addOverrunData(true)
+	rFeature := s.remoteDevice.FeatureByEntityTypeAndRole(s.dhwCircuitEntity, model.FeatureTypeTypeHvac, model.RoleTypeServer)
+	descriptions := &model.HvacOverrunDescriptionListDataType{
+		HvacOverrunDescriptionData: []model.HvacOverrunDescriptionDataType{
+			{OverrunId: util.Ptr(model.HvacOverrunIdType(1)), OverrunType: util.Ptr(model.HvacOverrunTypeTypeOneTimeDhw), AffectedSystemFunctionId: []model.HvacSystemFunctionIdType{1}},
+			{OverrunId: util.Ptr(model.HvacOverrunIdType(2)), OverrunType: util.Ptr(model.HvacOverrunTypeTypeOneTimeDhw), AffectedSystemFunctionId: []model.HvacSystemFunctionIdType{1}},
+		},
+	}
+	_, fErr := rFeature.UpdateData(true, model.FunctionTypeHvacOverrunDescriptionListData, descriptions, nil, nil)
+	assert.Nil(s.T(), fErr)
+
+	_, err := s.sut.StartOneTimeDhw(s.dhwCircuitEntity, nil)
+	assert.ErrorIs(s.T(), err, api.ErrDataNotAvailable)
+}
+
+type responseCallbackRegistrarStub struct {
+	callback func(spineapi.ResponseMessage)
+	err      error
+}
+
+func (s *responseCallbackRegistrarStub) AddResponseCallback(
+	_ model.MsgCounterType,
+	callback func(spineapi.ResponseMessage),
+) error {
+	s.callback = callback
+	return s.err
+}
+
+func TestRegisterResultCallbackForwardsDeviceResult(t *testing.T) {
+	registrar := &responseCallbackRegistrarStub{}
+	counter := model.MsgCounterType(42)
+	errorNumber := model.ErrorNumberTypeCommandRejected
+	called := false
+
+	err := (&CDSF{}).registerResultCallback(registrar, &counter, func(result model.ResultDataType, gotCounter model.MsgCounterType) {
+		called = true
+		assert.Equal(t, counter, gotCounter)
+		assert.Equal(t, errorNumber, *result.ErrorNumber)
+	})
+	assert.NoError(t, err)
+	assert.NotNil(t, registrar.callback)
+	registrar.callback(spineapi.ResponseMessage{Data: &model.ResultDataType{ErrorNumber: &errorNumber}})
+	assert.True(t, called)
+}
+
+func TestRegisterResultCallbackReturnsRegistrationError(t *testing.T) {
+	want := errors.New("callback unavailable")
+	registrar := &responseCallbackRegistrarStub{err: want}
+	counter := model.MsgCounterType(42)
+
+	err := (&CDSF{}).registerResultCallback(registrar, &counter, func(model.ResultDataType, model.MsgCounterType) {})
+	assert.ErrorIs(t, err, want)
 }
 
 // helpers

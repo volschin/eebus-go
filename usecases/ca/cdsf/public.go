@@ -4,7 +4,6 @@ import (
 	"github.com/enbility/eebus-go/api"
 	"github.com/enbility/eebus-go/features/client"
 	ucapi "github.com/enbility/eebus-go/usecases/api"
-	"github.com/enbility/ship-go/logging"
 	spineapi "github.com/enbility/spine-go/api"
 	"github.com/enbility/spine-go/model"
 	"github.com/enbility/spine-go/util"
@@ -131,7 +130,7 @@ func (e *CDSF) WriteOperationMode(
 		return nil, api.ErrDataNotAvailable
 	}
 
-	var modeId *model.HvacOperationModeIdType
+	modeIds := make(map[model.HvacOperationModeIdType]struct{})
 	for _, relation := range relations {
 		for _, id := range relation.OperationModeId {
 			description, err := hvac.GetHvacOperationModeDescriptionForId(id)
@@ -139,29 +138,33 @@ func (e *CDSF) WriteOperationMode(
 				continue
 			}
 			if ucapi.HvacOperationModeType(*description.OperationModeType) == mode {
-				modeId = util.Ptr(id)
-				break
+				modeIds[id] = struct{}{}
 			}
 		}
-		if modeId != nil {
-			break
-		}
 	}
-	if modeId == nil {
+	if len(modeIds) == 0 {
 		return nil, api.ErrNotSupported
+	}
+	if len(modeIds) != 1 {
+		return nil, api.ErrDataNotAvailable
+	}
+	var modeId model.HvacOperationModeIdType
+	for id := range modeIds {
+		modeId = id
 	}
 
 	writeData := []model.HvacSystemFunctionDataType{
 		{
 			SystemFunctionId:       &systemFunctionId,
-			CurrentOperationModeId: modeId,
+			CurrentOperationModeId: &modeId,
 		},
 	}
 
 	msgCounter, err := hvac.WriteHvacSystemFunctionListData(writeData)
-	e.registerResultCallback(hvac, msgCounter, resultCB)
-
-	return msgCounter, err
+	if err != nil {
+		return msgCounter, err
+	}
+	return msgCounter, e.registerResultCallback(hvac, msgCounter, resultCB)
 }
 
 // Scenario 2
@@ -225,20 +228,25 @@ func (e *CDSF) writeOverrunStatus(
 	}
 
 	msgCounter, err := hvac.WriteHvacOverrunListData(writeData)
-	e.registerResultCallback(hvac, msgCounter, resultCB)
+	if err != nil {
+		return msgCounter, err
+	}
+	return msgCounter, e.registerResultCallback(hvac, msgCounter, resultCB)
+}
 
-	return msgCounter, err
+type responseCallbackRegistrar interface {
+	AddResponseCallback(model.MsgCounterType, func(spineapi.ResponseMessage)) error
 }
 
 // register a response callback that surfaces the device result of a write to
 // the caller, so a non-zero ResultData.ErrorNumber can be treated as a rejection
 func (e *CDSF) registerResultCallback(
-	hvac *client.Hvac,
+	registrar responseCallbackRegistrar,
 	msgCounter *model.MsgCounterType,
 	resultCB func(result model.ResultDataType, msgCounter model.MsgCounterType),
-) {
+) error {
 	if resultCB == nil || msgCounter == nil {
-		return
+		return nil
 	}
 
 	cb := func(msg spineapi.ResponseMessage) {
@@ -246,9 +254,7 @@ func (e *CDSF) registerResultCallback(
 			resultCB(*response, *msgCounter)
 		}
 	}
-	if err := hvac.AddResponseCallback(*msgCounter, cb); err != nil {
-		logging.Log().Debug("failed to add response callback for msgCounter %v: %v", msgCounter, err)
-	}
+	return registrar.AddResponseCallback(*msgCounter, cb)
 }
 
 // return the id of the one-time DHW overrun affecting the DHW system function,
