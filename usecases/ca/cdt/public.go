@@ -131,11 +131,9 @@ func (e *CDT) WriteSetpoint(
 	if err != nil {
 		return nil, err
 	}
-	writeData := append([]model.SetpointDataType(nil), all...)
 	matches := 0
-	for i := range writeData {
-		if writeData[i].SetpointId != nil && *writeData[i].SetpointId == setpointID {
-			writeData[i].Value = model.NewScaledNumberType(degC)
+	for i := range all {
+		if all[i].SetpointId != nil && *all[i].SetpointId == setpointID {
 			matches++
 		}
 	}
@@ -143,6 +141,12 @@ func (e *CDT) WriteSetpoint(
 		return nil, api.ErrDataInvalid
 	}
 
+	// Let the feature helper choose a proper partial write or merge this entry
+	// into the cached complete list for servers without WritePartial support.
+	writeData := []model.SetpointDataType{{
+		SetpointId: &setpointID,
+		Value:      model.NewScaledNumberType(degC),
+	}}
 	msgCounter, err := sp.WriteSetpointListData(writeData)
 	if err != nil || msgCounter == nil {
 		if err != nil {
