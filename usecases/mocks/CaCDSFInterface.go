@@ -654,6 +654,66 @@ func (_c *CaCDSFInterface_UpdateUseCaseAvailability_Call) RunAndReturn(run func(
 	return _c
 }
 
+// WriteCapabilities provides a mock function for the type CaCDSFInterface
+func (_mock *CaCDSFInterface) WriteCapabilities(entity api.EntityRemoteInterface) (api0.DHWSystemFunctionWriteCapabilities, error) {
+	ret := _mock.Called(entity)
+
+	if len(ret) == 0 {
+		panic("no return value specified for WriteCapabilities")
+	}
+
+	var r0 api0.DHWSystemFunctionWriteCapabilities
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(api.EntityRemoteInterface) (api0.DHWSystemFunctionWriteCapabilities, error)); ok {
+		return returnFunc(entity)
+	}
+	if returnFunc, ok := ret.Get(0).(func(api.EntityRemoteInterface) api0.DHWSystemFunctionWriteCapabilities); ok {
+		r0 = returnFunc(entity)
+	} else {
+		r0 = ret.Get(0).(api0.DHWSystemFunctionWriteCapabilities)
+	}
+	if returnFunc, ok := ret.Get(1).(func(api.EntityRemoteInterface) error); ok {
+		r1 = returnFunc(entity)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// CaCDSFInterface_WriteCapabilities_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'WriteCapabilities'
+type CaCDSFInterface_WriteCapabilities_Call struct {
+	*mock.Call
+}
+
+// WriteCapabilities is a helper method to define mock.On call
+//   - entity api.EntityRemoteInterface
+func (_e *CaCDSFInterface_Expecter) WriteCapabilities(entity interface{}) *CaCDSFInterface_WriteCapabilities_Call {
+	return &CaCDSFInterface_WriteCapabilities_Call{Call: _e.mock.On("WriteCapabilities", entity)}
+}
+
+func (_c *CaCDSFInterface_WriteCapabilities_Call) Run(run func(entity api.EntityRemoteInterface)) *CaCDSFInterface_WriteCapabilities_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 api.EntityRemoteInterface
+		if args[0] != nil {
+			arg0 = args[0].(api.EntityRemoteInterface)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *CaCDSFInterface_WriteCapabilities_Call) Return(dHWSystemFunctionWriteCapabilities api0.DHWSystemFunctionWriteCapabilities, err error) *CaCDSFInterface_WriteCapabilities_Call {
+	_c.Call.Return(dHWSystemFunctionWriteCapabilities, err)
+	return _c
+}
+
+func (_c *CaCDSFInterface_WriteCapabilities_Call) RunAndReturn(run func(entity api.EntityRemoteInterface) (api0.DHWSystemFunctionWriteCapabilities, error)) *CaCDSFInterface_WriteCapabilities_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // WriteOperationMode provides a mock function for the type CaCDSFInterface
 func (_mock *CaCDSFInterface) WriteOperationMode(entity api.EntityRemoteInterface, mode api0.HvacOperationModeType, resultCB func(result model.ResultDataType, msgCounter model.MsgCounterType)) (*model.MsgCounterType, error) {
 	ret := _mock.Called(entity, mode, resultCB)

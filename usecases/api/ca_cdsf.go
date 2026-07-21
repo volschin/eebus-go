@@ -11,6 +11,10 @@ import (
 type CaCDSFInterface interface {
 	api.UseCaseInterface
 
+	// WriteCapabilities returns the currently usable CDSF writes for the DHW circuit.
+	// It fails closed when required cached metadata is missing or ambiguous.
+	WriteCapabilities(entity spineapi.EntityRemoteInterface) (DHWSystemFunctionWriteCapabilities, error)
+
 	// Scenario 1
 
 	// return the DHW operation modes supported by the DHW circuit

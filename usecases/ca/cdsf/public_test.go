@@ -45,6 +45,59 @@ func (s *CaCDSFSuite) Test_CurrentOperationMode() {
 	assert.Equal(s.T(), ucapi.HvacOperationModeTypeEco, data)
 }
 
+func (s *CaCDSFSuite) Test_WriteCapabilities() {
+	capabilities, err := s.sut.WriteCapabilities(s.mockRemoteEntity)
+	assert.ErrorIs(s.T(), err, api.ErrNoCompatibleEntity)
+	assert.Equal(s.T(), ucapi.DHWSystemFunctionWriteCapabilities{}, capabilities)
+
+	s.addHvacData(util.Ptr(true))
+	s.addOverrunData(true)
+	s.setSupportedScenarios(1, 2, 3)
+
+	capabilities, err = s.sut.WriteCapabilities(s.dhwCircuitEntity)
+	assert.NoError(s.T(), err)
+	assert.Equal(s.T(), ucapi.DHWSystemFunctionWriteCapabilities{
+		OperationMode:   true,
+		StartOneTimeDhw: true,
+		StopOneTimeDhw:  true,
+	}, capabilities)
+
+	// Start and stop are deliberately independent because they are separate
+	// scenarios even though both operate on the same overrun data.
+	s.setSupportedScenarios(1, 2)
+	capabilities, err = s.sut.WriteCapabilities(s.dhwCircuitEntity)
+	assert.NoError(s.T(), err)
+	assert.True(s.T(), capabilities.OperationMode)
+	assert.True(s.T(), capabilities.StartOneTimeDhw)
+	assert.False(s.T(), capabilities.StopOneTimeDhw)
+}
+
+func (s *CaCDSFSuite) Test_WriteCapabilitiesFailClosed() {
+	s.addHvacData(util.Ptr(false))
+	s.addOverrunData(false)
+	s.setSupportedScenarios(1, 2, 3)
+
+	capabilities, err := s.sut.WriteCapabilities(s.dhwCircuitEntity)
+	assert.NoError(s.T(), err)
+	assert.Equal(s.T(), ucapi.DHWSystemFunctionWriteCapabilities{}, capabilities)
+
+	// Missing/ambiguous metadata is different from a known read-only
+	// capability and remains an unavailable-data error.
+	rFeature := s.remoteDevice.FeatureByEntityTypeAndRole(
+		s.dhwCircuitEntity, model.FeatureTypeTypeHvac, model.RoleTypeServer,
+	)
+	_, updateErr := rFeature.UpdateData(
+		true,
+		model.FunctionTypeHvacOverrunDescriptionListData,
+		&model.HvacOverrunDescriptionListDataType{},
+		nil,
+		nil,
+	)
+	assert.Nil(s.T(), updateErr)
+	_, err = s.sut.WriteCapabilities(s.dhwCircuitEntity)
+	assert.ErrorIs(s.T(), err, api.ErrDataNotAvailable)
+}
+
 func (s *CaCDSFSuite) Test_WriteOperationMode() {
 	_, err := s.sut.WriteOperationMode(s.mockRemoteEntity, ucapi.HvacOperationModeTypeOn, nil)
 	assert.NotNil(s.T(), err)
@@ -256,11 +309,29 @@ func TestRegisterResultCallbackForwardsDeviceResult(t *testing.T) {
 		called = true
 		assert.Equal(t, counter, gotCounter)
 		assert.Equal(t, errorNumber, *result.ErrorNumber)
-	})
+	}, nil)
 	assert.NoError(t, err)
 	assert.NotNil(t, registrar.callback)
 	registrar.callback(spineapi.ResponseMessage{Data: &model.ResultDataType{ErrorNumber: &errorNumber}})
 	assert.True(t, called)
+}
+
+func TestRegisterResultCallbackRefreshesOnlyAcceptedWrites(t *testing.T) {
+	registrar := &responseCallbackRegistrarStub{}
+	counter := model.MsgCounterType(43)
+	refreshes := 0
+
+	err := (&CDSF{}).registerResultCallback(registrar, &counter, nil, func() { refreshes++ })
+	assert.NoError(t, err)
+	assert.NotNil(t, registrar.callback)
+
+	noError := model.ErrorNumberTypeNoError
+	registrar.callback(spineapi.ResponseMessage{Data: &model.ResultDataType{ErrorNumber: &noError}})
+	assert.Equal(t, 1, refreshes)
+
+	rejected := model.ErrorNumberTypeCommandRejected
+	registrar.callback(spineapi.ResponseMessage{Data: &model.ResultDataType{ErrorNumber: &rejected}})
+	assert.Equal(t, 1, refreshes)
 }
 
 func TestRegisterResultCallbackReturnsRegistrationError(t *testing.T) {
@@ -268,7 +339,7 @@ func TestRegisterResultCallbackReturnsRegistrationError(t *testing.T) {
 	registrar := &responseCallbackRegistrarStub{err: want}
 	counter := model.MsgCounterType(42)
 
-	err := (&CDSF{}).registerResultCallback(registrar, &counter, func(model.ResultDataType, model.MsgCounterType) {})
+	err := (&CDSF{}).registerResultCallback(registrar, &counter, func(model.ResultDataType, model.MsgCounterType) {}, nil)
 	assert.ErrorIs(t, err, want)
 }
 
@@ -357,4 +428,35 @@ func (s *CaCDSFSuite) addHvacData(isChangeable *bool) {
 	}
 	_, fErr = rFeature.UpdateData(true, model.FunctionTypeHvacSystemFunctionListData, functionData, nil, nil)
 	assert.Nil(s.T(), fErr)
+}
+
+func (s *CaCDSFSuite) setSupportedScenarios(scenarios ...model.UseCaseScenarioSupportType) {
+	remoteFeature := s.remoteDevice.FeatureByEntityTypeAndRole(
+		s.dhwCircuitEntity, model.FeatureTypeTypeHvac, model.RoleTypeServer,
+	)
+	nodeAddress := &model.FeatureAddressType{
+		Device:  s.remoteDevice.Address(),
+		Entity:  []model.AddressEntityType{0},
+		Feature: util.Ptr(model.AddressFeatureType(0)),
+	}
+	nodeFeature := s.remoteDevice.FeatureByAddress(nodeAddress)
+	data := &model.NodeManagementUseCaseDataType{}
+	data.AddUseCaseSupport(
+		*remoteFeature.Address(),
+		model.UseCaseActorTypeDHWCircuit,
+		model.UseCaseNameTypeConfigurationOfDhwSystemFunction,
+		"1.0.0",
+		"release",
+		true,
+		scenarios,
+	)
+	_, err := nodeFeature.UpdateData(true, model.FunctionTypeNodeManagementUseCaseData, data, nil, nil)
+	assert.Nil(s.T(), err)
+	s.sut.UseCaseBase.HandleEvent(spineapi.EventPayload{
+		Device:     s.remoteDevice,
+		Entity:     s.dhwCircuitEntity,
+		EventType:  spineapi.EventTypeDataChange,
+		ChangeType: spineapi.ElementChangeUpdate,
+		Data:       data,
+	})
 }

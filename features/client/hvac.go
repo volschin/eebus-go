@@ -150,3 +150,17 @@ func (h *Hvac) WriteHvacSystemFunctionListData(
 
 	return h.remoteDevice.Sender().Write(h.featureLocal.Address(), h.featureRemote.Address(), cmd)
 }
+
+// IsHvacSystemFunctionListDataWritable reports whether the remote feature
+// advertises the write operation for HvacSystemFunctionListData.
+func (h *Hvac) IsHvacSystemFunctionListDataWritable() bool {
+	operation, ok := h.featureRemote.Operations()[model.FunctionTypeHvacSystemFunctionListData]
+	return ok && operation != nil && operation.Write()
+}
+
+// IsHvacOverrunListDataWritable reports whether the remote feature advertises
+// the write operation for HvacOverrunListData.
+func (h *Hvac) IsHvacOverrunListDataWritable() bool {
+	operation, ok := h.featureRemote.Operations()[model.FunctionTypeHvacOverrunListData]
+	return ok && operation != nil && operation.Write()
+}

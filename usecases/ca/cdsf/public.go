@@ -9,6 +9,56 @@ import (
 	"github.com/enbility/spine-go/util"
 )
 
+// WriteCapabilities returns the currently usable CDSF writes for the DHW
+// circuit. Missing or ambiguous cached metadata fails closed so callers never
+// advertise a write that WriteOperationMode, StartOneTimeDhw or StopOneTimeDhw
+// would predictably reject.
+func (e *CDSF) WriteCapabilities(
+	entity spineapi.EntityRemoteInterface,
+) (ucapi.DHWSystemFunctionWriteCapabilities, error) {
+	if !e.IsCompatibleEntityType(entity) {
+		return ucapi.DHWSystemFunctionWriteCapabilities{}, api.ErrNoCompatibleEntity
+	}
+
+	hvac, err := client.NewHvac(e.LocalEntity, entity)
+	if err != nil {
+		return ucapi.DHWSystemFunctionWriteCapabilities{}, err
+	}
+
+	systemFunctionId, err := e.systemFunctionId(entity)
+	if err != nil {
+		return ucapi.DHWSystemFunctionWriteCapabilities{}, err
+	}
+	systemFunction, err := hvac.GetHvacSystemFunctionForId(systemFunctionId)
+	if err != nil {
+		return ucapi.DHWSystemFunctionWriteCapabilities{}, api.ErrDataNotAvailable
+	}
+	modes, err := e.OperationModes(entity)
+	if err != nil {
+		return ucapi.DHWSystemFunctionWriteCapabilities{}, err
+	}
+
+	overrunId, err := e.overrunId(entity)
+	if err != nil {
+		return ucapi.DHWSystemFunctionWriteCapabilities{}, err
+	}
+	overrun, err := hvac.GetHvacOverrunForId(overrunId)
+	if err != nil {
+		return ucapi.DHWSystemFunctionWriteCapabilities{}, api.ErrDataNotAvailable
+	}
+
+	modeWritable := hvac.IsHvacSystemFunctionListDataWritable() && len(modes) > 0 &&
+		(systemFunction.IsOperationModeIdChangeable == nil || *systemFunction.IsOperationModeIdChangeable)
+	overrunWritable := hvac.IsHvacOverrunListDataWritable() &&
+		(overrun.IsOverrunStatusChangeable == nil || *overrun.IsOverrunStatusChangeable)
+
+	return ucapi.DHWSystemFunctionWriteCapabilities{
+		OperationMode:   modeWritable && e.IsScenarioAvailableAtEntity(entity, 1),
+		StartOneTimeDhw: overrunWritable && e.IsScenarioAvailableAtEntity(entity, 2),
+		StopOneTimeDhw:  overrunWritable && e.IsScenarioAvailableAtEntity(entity, 3),
+	}, nil
+}
+
 // Scenario 1
 
 // return the DHW operation modes supported by the DHW circuit,
@@ -164,7 +214,9 @@ func (e *CDSF) WriteOperationMode(
 	if err != nil {
 		return msgCounter, err
 	}
-	return msgCounter, e.registerResultCallback(hvac, msgCounter, resultCB)
+	return msgCounter, e.registerResultCallback(hvac, msgCounter, resultCB, func() {
+		_, _ = hvac.RequestHvacSystemFunctions(nil, nil)
+	})
 }
 
 // Scenario 2
@@ -231,7 +283,9 @@ func (e *CDSF) writeOverrunStatus(
 	if err != nil {
 		return msgCounter, err
 	}
-	return msgCounter, e.registerResultCallback(hvac, msgCounter, resultCB)
+	return msgCounter, e.registerResultCallback(hvac, msgCounter, resultCB, func() {
+		_, _ = hvac.RequestHvacOverruns(nil, nil)
+	})
 }
 
 type responseCallbackRegistrar interface {
@@ -244,14 +298,20 @@ func (e *CDSF) registerResultCallback(
 	registrar responseCallbackRegistrar,
 	msgCounter *model.MsgCounterType,
 	resultCB func(result model.ResultDataType, msgCounter model.MsgCounterType),
+	refresh func(),
 ) error {
-	if resultCB == nil || msgCounter == nil {
+	if msgCounter == nil {
 		return nil
 	}
 
 	cb := func(msg spineapi.ResponseMessage) {
 		if response, ok := msg.Data.(*model.ResultDataType); ok {
-			resultCB(*response, *msgCounter)
+			if (response.ErrorNumber == nil || *response.ErrorNumber == model.ErrorNumberTypeNoError) && refresh != nil {
+				refresh()
+			}
+			if resultCB != nil {
+				resultCB(*response, *msgCounter)
+			}
 		}
 	}
 	return registrar.AddResponseCallback(*msgCounter, cb)
