@@ -19,12 +19,12 @@ const (
 
 type OptionalPowerConsumptionInfo struct {
 	PowerSequenceId model.PowerSequenceIdType
-	Power 			*float64
-	MaxPower 		*float64
-	State 			model.PowerSequenceStateType
-	IsPausable 		bool
-	IsStoppable 	bool
-	StartTime 		*time.Time
+	Power           *float64
+	MaxPower        *float64
+	State           model.PowerSequenceStateType
+	IsPausable      bool
+	IsStoppable     bool
+	StartTime       *time.Time
 }
 
 // manufacturer data type
@@ -204,6 +204,16 @@ const (
 	HvacOperationModeTypeOff  HvacOperationModeType = "off"
 	HvacOperationModeTypeEco  HvacOperationModeType = "eco"
 )
+
+// DHWSystemFunctionWriteCapabilities describes the currently usable CDSF
+// writes for a DHW circuit. A capability is true only when the corresponding
+// use-case scenario, remote write operation and changeability metadata permit
+// the write.
+type DHWSystemFunctionWriteCapabilities struct {
+	OperationMode   bool
+	StartOneTimeDhw bool
+	StopOneTimeDhw  bool
+}
 
 // HVAC temperature setpoint, e.g. for a room or domestic hot water
 type Setpoint struct {
