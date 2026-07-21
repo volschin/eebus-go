@@ -81,8 +81,7 @@ func (s *CaCDSFSuite) Test_WriteCapabilitiesFailClosed() {
 	assert.NoError(s.T(), err)
 	assert.Equal(s.T(), ucapi.DHWSystemFunctionWriteCapabilities{}, capabilities)
 
-	// Missing/ambiguous metadata is different from a known read-only
-	// capability and remains an unavailable-data error.
+	// Missing or ambiguous metadata fails only the affected capability closed.
 	rFeature := s.remoteDevice.FeatureByEntityTypeAndRole(
 		s.dhwCircuitEntity, model.FeatureTypeTypeHvac, model.RoleTypeServer,
 	)
@@ -94,8 +93,47 @@ func (s *CaCDSFSuite) Test_WriteCapabilitiesFailClosed() {
 		nil,
 	)
 	assert.Nil(s.T(), updateErr)
-	_, err = s.sut.WriteCapabilities(s.dhwCircuitEntity)
-	assert.ErrorIs(s.T(), err, api.ErrDataNotAvailable)
+	capabilities, err = s.sut.WriteCapabilities(s.dhwCircuitEntity)
+	assert.NoError(s.T(), err)
+	assert.Equal(s.T(), ucapi.DHWSystemFunctionWriteCapabilities{}, capabilities)
+}
+
+func (s *CaCDSFSuite) Test_WriteCapabilitiesResolveModeAndBoostIndependently() {
+	s.addHvacData(util.Ptr(true))
+	s.addOverrunData(true)
+	s.setSupportedScenarios(1, 2, 3)
+	rFeature := s.remoteDevice.FeatureByEntityTypeAndRole(
+		s.dhwCircuitEntity, model.FeatureTypeTypeHvac, model.RoleTypeServer,
+	)
+
+	_, updateErr := rFeature.UpdateData(
+		true,
+		model.FunctionTypeHvacOverrunDescriptionListData,
+		&model.HvacOverrunDescriptionListDataType{},
+		nil,
+		nil,
+	)
+	assert.Nil(s.T(), updateErr)
+	capabilities, err := s.sut.WriteCapabilities(s.dhwCircuitEntity)
+	assert.NoError(s.T(), err)
+	assert.True(s.T(), capabilities.OperationMode)
+	assert.False(s.T(), capabilities.StartOneTimeDhw)
+	assert.False(s.T(), capabilities.StopOneTimeDhw)
+
+	s.addOverrunData(true)
+	_, updateErr = rFeature.UpdateData(
+		true,
+		model.FunctionTypeHvacSystemFunctionOperationModeRelationListData,
+		&model.HvacSystemFunctionOperationModeRelationListDataType{},
+		nil,
+		nil,
+	)
+	assert.Nil(s.T(), updateErr)
+	capabilities, err = s.sut.WriteCapabilities(s.dhwCircuitEntity)
+	assert.NoError(s.T(), err)
+	assert.False(s.T(), capabilities.OperationMode)
+	assert.True(s.T(), capabilities.StartOneTimeDhw)
+	assert.True(s.T(), capabilities.StopOneTimeDhw)
 }
 
 func (s *CaCDSFSuite) Test_WriteOperationMode() {

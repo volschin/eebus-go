@@ -25,38 +25,29 @@ func (e *CDSF) WriteCapabilities(
 		return ucapi.DHWSystemFunctionWriteCapabilities{}, err
 	}
 
-	systemFunctionId, err := e.systemFunctionId(entity)
-	if err != nil {
-		return ucapi.DHWSystemFunctionWriteCapabilities{}, err
-	}
-	systemFunction, err := hvac.GetHvacSystemFunctionForId(systemFunctionId)
-	if err != nil {
-		return ucapi.DHWSystemFunctionWriteCapabilities{}, api.ErrDataNotAvailable
-	}
-	modes, err := e.OperationModes(entity)
-	if err != nil {
-		return ucapi.DHWSystemFunctionWriteCapabilities{}, err
+	capabilities := ucapi.DHWSystemFunctionWriteCapabilities{}
+	if e.IsScenarioAvailableAtEntity(entity, 1) {
+		systemFunctionId, idErr := e.systemFunctionId(entity)
+		systemFunction, dataErr := hvac.GetHvacSystemFunctionForId(systemFunctionId)
+		modes, modesErr := e.OperationModes(entity)
+		capabilities.OperationMode = idErr == nil && dataErr == nil && systemFunction != nil &&
+			modesErr == nil && len(modes) > 0 &&
+			hvac.IsHvacSystemFunctionListDataWritable() &&
+			(systemFunction.IsOperationModeIdChangeable == nil || *systemFunction.IsOperationModeIdChangeable)
 	}
 
-	overrunId, err := e.overrunId(entity)
-	if err != nil {
-		return ucapi.DHWSystemFunctionWriteCapabilities{}, err
-	}
-	overrun, err := hvac.GetHvacOverrunForId(overrunId)
-	if err != nil {
-		return ucapi.DHWSystemFunctionWriteCapabilities{}, api.ErrDataNotAvailable
+	startAvailable := e.IsScenarioAvailableAtEntity(entity, 2)
+	stopAvailable := e.IsScenarioAvailableAtEntity(entity, 3)
+	if startAvailable || stopAvailable {
+		overrunId, idErr := e.overrunId(entity)
+		overrun, dataErr := hvac.GetHvacOverrunForId(overrunId)
+		overrunWritable := idErr == nil && dataErr == nil && overrun != nil && hvac.IsHvacOverrunListDataWritable() &&
+			(overrun.IsOverrunStatusChangeable == nil || *overrun.IsOverrunStatusChangeable)
+		capabilities.StartOneTimeDhw = startAvailable && overrunWritable
+		capabilities.StopOneTimeDhw = stopAvailable && overrunWritable
 	}
 
-	modeWritable := hvac.IsHvacSystemFunctionListDataWritable() && len(modes) > 0 &&
-		(systemFunction.IsOperationModeIdChangeable == nil || *systemFunction.IsOperationModeIdChangeable)
-	overrunWritable := hvac.IsHvacOverrunListDataWritable() &&
-		(overrun.IsOverrunStatusChangeable == nil || *overrun.IsOverrunStatusChangeable)
-
-	return ucapi.DHWSystemFunctionWriteCapabilities{
-		OperationMode:   modeWritable && e.IsScenarioAvailableAtEntity(entity, 1),
-		StartOneTimeDhw: overrunWritable && e.IsScenarioAvailableAtEntity(entity, 2),
-		StopOneTimeDhw:  overrunWritable && e.IsScenarioAvailableAtEntity(entity, 3),
-	}, nil
+	return capabilities, nil
 }
 
 // Scenario 1
