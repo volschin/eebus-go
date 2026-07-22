@@ -1,8 +1,13 @@
 package crht
 
 import (
+	"encoding/json"
+	"errors"
+	"math"
+
 	"github.com/enbility/eebus-go/api"
 	ucapi "github.com/enbility/eebus-go/usecases/api"
+	spineapi "github.com/enbility/spine-go/api"
 	"github.com/enbility/spine-go/model"
 	"github.com/enbility/spine-go/util"
 	"github.com/stretchr/testify/assert"
@@ -198,6 +203,121 @@ func (s *CaCRHTSuite) Test_WriteSetpoint_WriteNotAdvertised() {
 	// the write must be rejected when the remote does not advertise Write()
 	_, err := s.sut.WriteSetpoint(s.hvacRoomEntity, ucapi.HvacOperationModeTypeEco, 19, nil)
 	assert.ErrorIs(s.T(), err, api.ErrNotSupported)
+}
+
+func (s *CaCRHTSuite) Test_WriteRoomAirTemperatureSetpoint() {
+	_, err := s.sut.WriteRoomAirTemperatureSetpoint(s.mockRemoteEntity, 21.5, nil)
+	assert.ErrorIs(s.T(), err, api.ErrNoCompatibleEntity)
+
+	_, err = s.sut.WriteRoomAirTemperatureSetpoint(s.hvacRoomEntity, 21.5, nil)
+	assert.ErrorIs(s.T(), err, api.ErrDataNotAvailable)
+
+	s.addCompleteRoomAirSetpointState()
+	setpointFeature := s.remoteDevice.FeatureByEntityTypeAndRole(
+		s.hvacRoomEntity, model.FeatureTypeTypeSetpoint, model.RoleTypeServer,
+	)
+	setpoints := &model.SetpointListDataType{SetpointData: []model.SetpointDataType{
+		{SetpointId: util.Ptr(model.SetpointIdType(1)), Value: model.NewScaledNumberType(21)},
+		{SetpointId: util.Ptr(model.SetpointIdType(99)), Value: model.NewScaledNumberType(7)},
+	}}
+	_, updateErr := setpointFeature.UpdateData(true, model.FunctionTypeSetpointListData, setpoints, nil, nil)
+	assert.Nil(s.T(), updateErr)
+	msgCounter, err := s.sut.WriteRoomAirTemperatureSetpoint(s.hvacRoomEntity, 21.5, nil)
+	assert.NoError(s.T(), err)
+	assert.NotNil(s.T(), msgCounter)
+
+	var datagram model.Datagram
+	assert.NoError(s.T(), json.Unmarshal(s.sentBytes, &datagram))
+	written := datagram.Datagram.Payload.Cmd[0].SetpointListData.SetpointData
+	assert.Len(s.T(), written, 2)
+	assert.Equal(s.T(), 21.5, written[0].Value.GetValue())
+	assert.Equal(s.T(), 7.0, written[1].Value.GetValue())
+
+	for _, value := range []float64{4.5, 30.5, 21.25, math.NaN(), math.Inf(1)} {
+		_, err = s.sut.WriteRoomAirTemperatureSetpoint(s.hvacRoomEntity, value, nil)
+		assert.ErrorIs(s.T(), err, api.ErrDataInvalid, "value %v", value)
+	}
+}
+
+func (s *CaCRHTSuite) Test_WriteRoomAirTemperatureSetpointRejectsReadOnlyOrUnchangeableState() {
+	s.addCompleteRoomAirSetpointState()
+	setpointFeature := s.remoteDevice.FeatureByEntityTypeAndRole(
+		s.hvacRoomEntity, model.FeatureTypeTypeSetpoint, model.RoleTypeServer,
+	)
+	setpointFeature.SetOperations([]model.FunctionPropertyType{{
+		Function:           util.Ptr(model.FunctionTypeSetpointListData),
+		PossibleOperations: &model.PossibleOperationsType{Read: &model.PossibleOperationsReadType{}},
+	}})
+	_, err := s.sut.WriteRoomAirTemperatureSetpoint(s.hvacRoomEntity, 21.5, nil)
+	assert.ErrorIs(s.T(), err, api.ErrNotSupported)
+
+	setpointFeature.SetOperations([]model.FunctionPropertyType{{
+		Function: util.Ptr(model.FunctionTypeSetpointListData),
+		PossibleOperations: &model.PossibleOperationsType{
+			Read:  &model.PossibleOperationsReadType{},
+			Write: &model.PossibleOperationsWriteType{},
+		},
+	}})
+	setpoints := &model.SetpointListDataType{SetpointData: []model.SetpointDataType{{
+		SetpointId:           util.Ptr(model.SetpointIdType(1)),
+		Value:                model.NewScaledNumberType(21),
+		IsSetpointChangeable: util.Ptr(false),
+	}}}
+	_, updateErr := setpointFeature.UpdateData(true, model.FunctionTypeSetpointListData, setpoints, nil, nil)
+	assert.Nil(s.T(), updateErr)
+	_, err = s.sut.WriteRoomAirTemperatureSetpoint(s.hvacRoomEntity, 21.5, nil)
+	assert.ErrorIs(s.T(), err, api.ErrNotSupported)
+}
+
+type crhtResultHandlerStub struct {
+	callback    func(spineapi.ResponseMessage)
+	registerErr error
+	requests    int
+}
+
+func (s *crhtResultHandlerStub) AddResponseCallback(
+	_ model.MsgCounterType,
+	callback func(spineapi.ResponseMessage),
+) error {
+	s.callback = callback
+	return s.registerErr
+}
+
+func (s *crhtResultHandlerStub) RequestSetpoints(
+	*model.SetpointListDataSelectorsType,
+	*model.SetpointDataElementsType,
+) (*model.MsgCounterType, error) {
+	s.requests++
+	return nil, nil
+}
+
+func (s *CaCRHTSuite) Test_RegisterSetpointResultCallbackRefreshesBeforeAcceptedCallback() {
+	counter := model.MsgCounterType(23)
+	handler := &crhtResultHandlerStub{}
+	callbackRequests := -1
+	err := registerSetpointResultCallback(handler, &counter, func(model.ResultDataType, model.MsgCounterType) {
+		callbackRequests = handler.requests
+	})
+	assert.NoError(s.T(), err)
+	assert.NotNil(s.T(), handler.callback)
+
+	noError := model.ErrorNumberTypeNoError
+	handler.callback(spineapi.ResponseMessage{Data: &model.ResultDataType{ErrorNumber: &noError}})
+	assert.Equal(s.T(), 1, handler.requests)
+	assert.Equal(s.T(), 1, callbackRequests)
+
+	rejected := model.ErrorNumberTypeCommandRejected
+	handler.callback(spineapi.ResponseMessage{Data: &model.ResultDataType{ErrorNumber: &rejected}})
+	assert.Equal(s.T(), 1, handler.requests)
+	assert.Equal(s.T(), 1, callbackRequests)
+}
+
+func (s *CaCRHTSuite) Test_RegisterSetpointResultCallbackReportsRegistrationFailure() {
+	counter := model.MsgCounterType(24)
+	registerErr := errors.New("register failed")
+	handler := &crhtResultHandlerStub{registerErr: registerErr}
+	err := registerSetpointResultCallback(handler, &counter, nil)
+	assert.ErrorIs(s.T(), err, registerErr)
 }
 
 // helpers

@@ -6,7 +6,6 @@ import (
 	"github.com/enbility/eebus-go/api"
 	"github.com/enbility/eebus-go/features/client"
 	ucapi "github.com/enbility/eebus-go/usecases/api"
-	"github.com/enbility/ship-go/logging"
 	spineapi "github.com/enbility/spine-go/api"
 	"github.com/enbility/spine-go/model"
 	"github.com/enbility/spine-go/util"
@@ -222,48 +221,105 @@ func (e *CRHT) WriteSetpoint(
 		return nil, err
 	}
 
+	return e.writeSetpoint(entity, setpointId, degC, resultCB)
+}
+
+// WriteRoomAirTemperatureSetpoint writes the single room-air temperature
+// setpoint selected by State. Selection is independent of the current HVAC
+// operation mode, so callers never have to alias auto or off to another mode.
+// The write fails closed if the relation is ambiguous, the cached state is
+// incomplete, the setpoint is read-only, or the value violates its range or
+// step constraints.
+func (e *CRHT) WriteRoomAirTemperatureSetpoint(
+	entity spineapi.EntityRemoteInterface,
+	degC float64,
+	resultCB func(result model.ResultDataType, msgCounter model.MsgCounterType),
+) (*model.MsgCounterType, error) {
+	state, err := e.State(entity)
+	if err != nil {
+		return nil, err
+	}
+	if !state.IsWritable || !state.IsChangeable {
+		return nil, api.ErrNotSupported
+	}
+	if !roomHeatingSetpointValueFitsState(degC, state) {
+		return nil, api.ErrDataInvalid
+	}
+
+	return e.writeSetpoint(entity, model.SetpointIdType(state.Id), degC, resultCB)
+}
+
+func roomHeatingSetpointValueFitsState(value float64, state ucapi.RoomHeatingSetpointState) bool {
+	if math.IsNaN(value) || math.IsInf(value, 0) ||
+		value < state.MinValue || value > state.MaxValue || state.StepSize <= 0 {
+		return false
+	}
+	steps := math.Round((value - state.MinValue) / state.StepSize)
+	return math.Abs(state.MinValue+steps*state.StepSize-value) <= 1e-6
+}
+
+func (e *CRHT) writeSetpoint(
+	entity spineapi.EntityRemoteInterface,
+	setpointID model.SetpointIdType,
+	degC float64,
+	resultCB func(result model.ResultDataType, msgCounter model.MsgCounterType),
+) (*model.MsgCounterType, error) {
 	sp, err := client.NewSetpoint(e.LocalEntity, entity)
 	if err != nil {
 		return nil, err
 	}
-
-	if data, err := sp.GetSetpointForId(setpointId); err == nil &&
+	if !sp.IsSetpointListDataWritable() {
+		return nil, api.ErrNotSupported
+	}
+	if data, err := sp.GetSetpointForId(setpointID); err == nil &&
 		data.IsSetpointChangeable != nil && !*data.IsSetpointChangeable {
 		return nil, api.ErrNotSupported
 	}
 
-	data := []model.SetpointDataType{
-		{
-			SetpointId: util.Ptr(setpointId),
-			Value:      model.NewScaledNumberType(degC),
-		},
-	}
-
+	data := []model.SetpointDataType{{
+		SetpointId: util.Ptr(setpointID),
+		Value:      model.NewScaledNumberType(degC),
+	}}
 	msgCounter, err := sp.WriteSetpointListData(data)
-	registerResultCallback(sp, msgCounter, resultCB)
-
-	return msgCounter, err
+	if err != nil {
+		return msgCounter, err
+	}
+	if err := registerSetpointResultCallback(sp, msgCounter, resultCB); err != nil {
+		return msgCounter, err
+	}
+	return msgCounter, nil
 }
 
-// register a response callback that surfaces the device result of a write to
-// the caller, so a non-zero ResultData.ErrorNumber can be treated as a rejection
-func registerResultCallback(
-	sp *client.Setpoint,
+type setpointResultHandler interface {
+	AddResponseCallback(model.MsgCounterType, func(spineapi.ResponseMessage)) error
+	RequestSetpoints(
+		*model.SetpointListDataSelectorsType,
+		*model.SetpointDataElementsType,
+	) (*model.MsgCounterType, error)
+}
+
+// registerSetpointResultCallback refreshes the setpoint cache after an
+// accepted result and before forwarding that result to the caller.
+func registerSetpointResultCallback(
+	sp setpointResultHandler,
 	msgCounter *model.MsgCounterType,
 	resultCB func(result model.ResultDataType, msgCounter model.MsgCounterType),
-) {
-	if resultCB == nil || msgCounter == nil {
-		return
+) error {
+	if sp == nil || msgCounter == nil {
+		return api.ErrDataInvalid
 	}
 
 	cb := func(msg spineapi.ResponseMessage) {
 		if response, ok := msg.Data.(*model.ResultDataType); ok {
-			resultCB(*response, *msgCounter)
+			if response.ErrorNumber == nil || *response.ErrorNumber == model.ErrorNumberTypeNoError {
+				_, _ = sp.RequestSetpoints(nil, nil)
+			}
+			if resultCB != nil {
+				resultCB(*response, *msgCounter)
+			}
 		}
 	}
-	if err := sp.AddResponseCallback(*msgCounter, cb); err != nil {
-		logging.Log().Debug("failed to add response callback for msgCounter %v: %v", msgCounter, err)
-	}
+	return sp.AddResponseCallback(*msgCounter, cb)
 }
 
 // return the ids of the setpoints related to the heating system function

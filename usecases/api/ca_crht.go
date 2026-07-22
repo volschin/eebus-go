@@ -55,4 +55,13 @@ type CaCRHTInterface interface {
 		degC float64,
 		resultCB func(result model.ResultDataType, msgCounter model.MsgCounterType),
 	) (*model.MsgCounterType, error)
+
+	// WriteRoomAirTemperatureSetpoint writes the single relation-safe room-air
+	// temperature setpoint selected by State, independent of operation mode.
+	// Accepted device results trigger a setpoint refresh before resultCB runs.
+	WriteRoomAirTemperatureSetpoint(
+		entity spineapi.EntityRemoteInterface,
+		degC float64,
+		resultCB func(result model.ResultDataType, msgCounter model.MsgCounterType),
+	) (*model.MsgCounterType, error)
 }

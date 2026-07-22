@@ -418,64 +418,6 @@ func (_c *CaCRHTInterface_SetpointConstraints_Call) RunAndReturn(run func(entity
 	return _c
 }
 
-// State provides a mock function for the type CaCRHTInterface
-func (_mock *CaCRHTInterface) State(entity api.EntityRemoteInterface) (api1.RoomHeatingSetpointState, error) {
-	ret := _mock.Called(entity)
-
-	if len(ret) == 0 {
-		panic("no return value specified for State")
-	}
-
-	var r0 api1.RoomHeatingSetpointState
-	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(api.EntityRemoteInterface) (api1.RoomHeatingSetpointState, error)); ok {
-		return returnFunc(entity)
-	}
-	if returnFunc, ok := ret.Get(0).(func(api.EntityRemoteInterface) api1.RoomHeatingSetpointState); ok {
-		r0 = returnFunc(entity)
-	} else {
-		r0 = ret.Get(0).(api1.RoomHeatingSetpointState)
-	}
-	if returnFunc, ok := ret.Get(1).(func(api.EntityRemoteInterface) error); ok {
-		r1 = returnFunc(entity)
-	} else {
-		r1 = ret.Error(1)
-	}
-	return r0, r1
-}
-
-// CaCRHTInterface_State_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'State'
-type CaCRHTInterface_State_Call struct {
-	*mock.Call
-}
-
-// State is a helper method to define mock.On call
-//   - entity api.EntityRemoteInterface
-func (_e *CaCRHTInterface_Expecter) State(entity interface{}) *CaCRHTInterface_State_Call {
-	return &CaCRHTInterface_State_Call{Call: _e.mock.On("State", entity)}
-}
-
-func (_c *CaCRHTInterface_State_Call) Run(run func(entity api.EntityRemoteInterface)) *CaCRHTInterface_State_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 api.EntityRemoteInterface
-		if args[0] != nil {
-			arg0 = args[0].(api.EntityRemoteInterface)
-		}
-		run(arg0)
-	})
-	return _c
-}
-
-func (_c *CaCRHTInterface_State_Call) Return(state api1.RoomHeatingSetpointState, err error) *CaCRHTInterface_State_Call {
-	_c.Call.Return(state, err)
-	return _c
-}
-
-func (_c *CaCRHTInterface_State_Call) RunAndReturn(run func(entity api.EntityRemoteInterface) (api1.RoomHeatingSetpointState, error)) *CaCRHTInterface_State_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
 // Setpoints provides a mock function for the type CaCRHTInterface
 func (_mock *CaCRHTInterface) Setpoints(entity api.EntityRemoteInterface) ([]api1.Setpoint, error) {
 	ret := _mock.Called(entity)
@@ -538,6 +480,66 @@ func (_c *CaCRHTInterface_Setpoints_Call) RunAndReturn(run func(entity api.Entit
 	return _c
 }
 
+// State provides a mock function for the type CaCRHTInterface
+func (_mock *CaCRHTInterface) State(entity api.EntityRemoteInterface) (api1.RoomHeatingSetpointState, error) {
+	ret := _mock.Called(entity)
+
+	if len(ret) == 0 {
+		panic("no return value specified for State")
+	}
+
+	var r0 api1.RoomHeatingSetpointState
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(api.EntityRemoteInterface) (api1.RoomHeatingSetpointState, error)); ok {
+		return returnFunc(entity)
+	}
+	if returnFunc, ok := ret.Get(0).(func(api.EntityRemoteInterface) api1.RoomHeatingSetpointState); ok {
+		r0 = returnFunc(entity)
+	} else {
+		r0 = ret.Get(0).(api1.RoomHeatingSetpointState)
+	}
+	if returnFunc, ok := ret.Get(1).(func(api.EntityRemoteInterface) error); ok {
+		r1 = returnFunc(entity)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// CaCRHTInterface_State_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'State'
+type CaCRHTInterface_State_Call struct {
+	*mock.Call
+}
+
+// State is a helper method to define mock.On call
+//   - entity api.EntityRemoteInterface
+func (_e *CaCRHTInterface_Expecter) State(entity interface{}) *CaCRHTInterface_State_Call {
+	return &CaCRHTInterface_State_Call{Call: _e.mock.On("State", entity)}
+}
+
+func (_c *CaCRHTInterface_State_Call) Run(run func(entity api.EntityRemoteInterface)) *CaCRHTInterface_State_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 api.EntityRemoteInterface
+		if args[0] != nil {
+			arg0 = args[0].(api.EntityRemoteInterface)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *CaCRHTInterface_State_Call) Return(roomHeatingSetpointState api1.RoomHeatingSetpointState, err error) *CaCRHTInterface_State_Call {
+	_c.Call.Return(roomHeatingSetpointState, err)
+	return _c
+}
+
+func (_c *CaCRHTInterface_State_Call) RunAndReturn(run func(entity api.EntityRemoteInterface) (api1.RoomHeatingSetpointState, error)) *CaCRHTInterface_State_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // UpdateUseCaseAvailability provides a mock function for the type CaCRHTInterface
 func (_mock *CaCRHTInterface) UpdateUseCaseAvailability(available bool) {
 	_mock.Called(available)
@@ -575,6 +577,80 @@ func (_c *CaCRHTInterface_UpdateUseCaseAvailability_Call) Return() *CaCRHTInterf
 
 func (_c *CaCRHTInterface_UpdateUseCaseAvailability_Call) RunAndReturn(run func(available bool)) *CaCRHTInterface_UpdateUseCaseAvailability_Call {
 	_c.Run(run)
+	return _c
+}
+
+// WriteRoomAirTemperatureSetpoint provides a mock function for the type CaCRHTInterface
+func (_mock *CaCRHTInterface) WriteRoomAirTemperatureSetpoint(entity api.EntityRemoteInterface, degC float64, resultCB func(result model.ResultDataType, msgCounter model.MsgCounterType)) (*model.MsgCounterType, error) {
+	ret := _mock.Called(entity, degC, resultCB)
+
+	if len(ret) == 0 {
+		panic("no return value specified for WriteRoomAirTemperatureSetpoint")
+	}
+
+	var r0 *model.MsgCounterType
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(api.EntityRemoteInterface, float64, func(result model.ResultDataType, msgCounter model.MsgCounterType)) (*model.MsgCounterType, error)); ok {
+		return returnFunc(entity, degC, resultCB)
+	}
+	if returnFunc, ok := ret.Get(0).(func(api.EntityRemoteInterface, float64, func(result model.ResultDataType, msgCounter model.MsgCounterType)) *model.MsgCounterType); ok {
+		r0 = returnFunc(entity, degC, resultCB)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*model.MsgCounterType)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(api.EntityRemoteInterface, float64, func(result model.ResultDataType, msgCounter model.MsgCounterType)) error); ok {
+		r1 = returnFunc(entity, degC, resultCB)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// CaCRHTInterface_WriteRoomAirTemperatureSetpoint_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'WriteRoomAirTemperatureSetpoint'
+type CaCRHTInterface_WriteRoomAirTemperatureSetpoint_Call struct {
+	*mock.Call
+}
+
+// WriteRoomAirTemperatureSetpoint is a helper method to define mock.On call
+//   - entity api.EntityRemoteInterface
+//   - degC float64
+//   - resultCB func(result model.ResultDataType, msgCounter model.MsgCounterType)
+func (_e *CaCRHTInterface_Expecter) WriteRoomAirTemperatureSetpoint(entity interface{}, degC interface{}, resultCB interface{}) *CaCRHTInterface_WriteRoomAirTemperatureSetpoint_Call {
+	return &CaCRHTInterface_WriteRoomAirTemperatureSetpoint_Call{Call: _e.mock.On("WriteRoomAirTemperatureSetpoint", entity, degC, resultCB)}
+}
+
+func (_c *CaCRHTInterface_WriteRoomAirTemperatureSetpoint_Call) Run(run func(entity api.EntityRemoteInterface, degC float64, resultCB func(result model.ResultDataType, msgCounter model.MsgCounterType))) *CaCRHTInterface_WriteRoomAirTemperatureSetpoint_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 api.EntityRemoteInterface
+		if args[0] != nil {
+			arg0 = args[0].(api.EntityRemoteInterface)
+		}
+		var arg1 float64
+		if args[1] != nil {
+			arg1 = args[1].(float64)
+		}
+		var arg2 func(result model.ResultDataType, msgCounter model.MsgCounterType)
+		if args[2] != nil {
+			arg2 = args[2].(func(result model.ResultDataType, msgCounter model.MsgCounterType))
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *CaCRHTInterface_WriteRoomAirTemperatureSetpoint_Call) Return(msgCounterType *model.MsgCounterType, err error) *CaCRHTInterface_WriteRoomAirTemperatureSetpoint_Call {
+	_c.Call.Return(msgCounterType, err)
+	return _c
+}
+
+func (_c *CaCRHTInterface_WriteRoomAirTemperatureSetpoint_Call) RunAndReturn(run func(entity api.EntityRemoteInterface, degC float64, resultCB func(result model.ResultDataType, msgCounter model.MsgCounterType)) (*model.MsgCounterType, error)) *CaCRHTInterface_WriteRoomAirTemperatureSetpoint_Call {
+	_c.Call.Return(run)
 	return _c
 }
 
