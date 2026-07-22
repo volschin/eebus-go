@@ -13,6 +13,11 @@ type CaCRHTInterface interface {
 
 	// Scenario 1
 
+	// State returns the complete room-air temperature setpoint selected for
+	// room heating. Duplicate relation references to the same setpoint are
+	// deduplicated. Missing fields or multiple distinct candidates fail closed.
+	State(entity spineapi.EntityRemoteInterface) (RoomHeatingSetpointState, error)
+
 	// return the current room heating temperature setpoints
 	//
 	// parameters:

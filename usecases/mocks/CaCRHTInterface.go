@@ -418,6 +418,64 @@ func (_c *CaCRHTInterface_SetpointConstraints_Call) RunAndReturn(run func(entity
 	return _c
 }
 
+// State provides a mock function for the type CaCRHTInterface
+func (_mock *CaCRHTInterface) State(entity api.EntityRemoteInterface) (api1.RoomHeatingSetpointState, error) {
+	ret := _mock.Called(entity)
+
+	if len(ret) == 0 {
+		panic("no return value specified for State")
+	}
+
+	var r0 api1.RoomHeatingSetpointState
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(api.EntityRemoteInterface) (api1.RoomHeatingSetpointState, error)); ok {
+		return returnFunc(entity)
+	}
+	if returnFunc, ok := ret.Get(0).(func(api.EntityRemoteInterface) api1.RoomHeatingSetpointState); ok {
+		r0 = returnFunc(entity)
+	} else {
+		r0 = ret.Get(0).(api1.RoomHeatingSetpointState)
+	}
+	if returnFunc, ok := ret.Get(1).(func(api.EntityRemoteInterface) error); ok {
+		r1 = returnFunc(entity)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// CaCRHTInterface_State_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'State'
+type CaCRHTInterface_State_Call struct {
+	*mock.Call
+}
+
+// State is a helper method to define mock.On call
+//   - entity api.EntityRemoteInterface
+func (_e *CaCRHTInterface_Expecter) State(entity interface{}) *CaCRHTInterface_State_Call {
+	return &CaCRHTInterface_State_Call{Call: _e.mock.On("State", entity)}
+}
+
+func (_c *CaCRHTInterface_State_Call) Run(run func(entity api.EntityRemoteInterface)) *CaCRHTInterface_State_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 api.EntityRemoteInterface
+		if args[0] != nil {
+			arg0 = args[0].(api.EntityRemoteInterface)
+		}
+		run(arg0)
+	})
+	return _c
+}
+
+func (_c *CaCRHTInterface_State_Call) Return(state api1.RoomHeatingSetpointState, err error) *CaCRHTInterface_State_Call {
+	_c.Call.Return(state, err)
+	return _c
+}
+
+func (_c *CaCRHTInterface_State_Call) RunAndReturn(run func(entity api.EntityRemoteInterface) (api1.RoomHeatingSetpointState, error)) *CaCRHTInterface_State_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Setpoints provides a mock function for the type CaCRHTInterface
 func (_mock *CaCRHTInterface) Setpoints(entity api.EntityRemoteInterface) ([]api1.Setpoint, error) {
 	ret := _mock.Called(entity)

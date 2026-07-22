@@ -250,3 +250,33 @@ type SetpointConstraints struct {
 	// the step size for temperature value changes
 	StepSize float64
 }
+
+// RoomHeatingSetpointState is the complete state of the single room-air
+// temperature setpoint selected by CRHT. State() only returns this value when
+// every numeric field is present and valid, so an omitted remote field is
+// never collapsed into a protocol-significant zero.
+type RoomHeatingSetpointState struct {
+	// the setpoint identifier
+	Id uint
+
+	// the current setpoint temperature value
+	Value float64
+
+	// the minimum allowed temperature value
+	MinValue float64
+
+	// the maximum allowed temperature value
+	MaxValue float64
+
+	// the allowed temperature step size
+	StepSize float64
+
+	// whether the setpoint is currently active; an omitted flag means active
+	IsActive bool
+
+	// whether the setpoint may be changed; an omitted flag means changeable
+	IsChangeable bool
+
+	// whether the remote feature advertises SetpointListData writes
+	IsWritable bool
+}
