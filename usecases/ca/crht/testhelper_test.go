@@ -36,6 +36,7 @@ type CaCRHTSuite struct {
 	hvacRoomEntity   spineapi.EntityRemoteInterface
 
 	eventCalled bool
+	sentBytes   []byte
 }
 
 func (s *CaCRHTSuite) Event(ski string, device spineapi.DeviceRemoteInterface, entity spineapi.EntityRemoteInterface, event api.EventType) {
@@ -44,6 +45,7 @@ func (s *CaCRHTSuite) Event(ski string, device spineapi.DeviceRemoteInterface, e
 
 func (s *CaCRHTSuite) BeforeTest(suiteName, testName string) {
 	s.eventCalled = false
+	s.sentBytes = nil
 	cert, _ := cert.CreateCertificate("test", "test", "DE", "test")
 	configuration, _ := api.NewConfiguration(
 		"test", "test", "test", "test",
@@ -76,19 +78,23 @@ func (s *CaCRHTSuite) BeforeTest(suiteName, testName string) {
 	_ = s.sut.AddFeatures()
 	s.sut.AddUseCase()
 
-	s.remoteDevice, s.hvacRoomEntity = setupDevices(s.service, s.T())
+	s.remoteDevice, s.hvacRoomEntity = setupDevices(s.service, s.T(), func(message []byte) {
+		s.sentBytes = append(s.sentBytes[:0], message...)
+	})
 }
 
 const remoteSki string = "testremoteski"
 
 func setupDevices(
-	eebusService api.ServiceInterface, t *testing.T) (
+	eebusService api.ServiceInterface, t *testing.T, onWrite func([]byte)) (
 	spineapi.DeviceRemoteInterface,
 	spineapi.EntityRemoteInterface) {
 	localDevice := eebusService.LocalDevice()
 
 	writeHandler := shipmocks.NewShipConnectionDataWriterInterface(t)
-	writeHandler.EXPECT().WriteShipMessageWithPayload(mock.Anything).Return().Maybe()
+	writeHandler.EXPECT().WriteShipMessageWithPayload(mock.Anything).Run(func(message []byte) {
+		onWrite(message)
+	}).Return().Maybe()
 	sender := spine.NewSender(writeHandler)
 	remoteDevice := spine.NewDeviceRemote(localDevice, remoteSki, sender)
 
