@@ -55,6 +55,80 @@ func (s *CaCRHTSuite) Test_SetpointConstraints() {
 	assert.Equal(s.T(), 0.5, data[0].StepSize)
 }
 
+func (s *CaCRHTSuite) Test_StateReturnsCompleteDeduplicatedRoomAirSetpoint() {
+	state, err := s.sut.State(s.mockRemoteEntity)
+	assert.Error(s.T(), err)
+	assert.Zero(s.T(), state)
+
+	s.addCompleteRoomAirSetpointState()
+
+	state, err = s.sut.State(s.hvacRoomEntity)
+	assert.NoError(s.T(), err)
+	assert.Equal(s.T(), ucapi.RoomHeatingSetpointState{
+		Id:           1,
+		Value:        21,
+		MinValue:     5,
+		MaxValue:     30,
+		StepSize:     0.5,
+		IsActive:     true,
+		IsChangeable: true,
+		IsWritable:   true,
+	}, state)
+}
+
+func (s *CaCRHTSuite) Test_StateRejectsMissingOrInvalidNumericFields() {
+	tests := map[string]struct {
+		value   *model.ScaledNumberType
+		minimum *model.ScaledNumberType
+		maximum *model.ScaledNumberType
+		step    *model.ScaledNumberType
+	}{
+		"missing value":   {nil, model.NewScaledNumberType(5), model.NewScaledNumberType(30), model.NewScaledNumberType(0.5)},
+		"missing minimum": {model.NewScaledNumberType(21), nil, model.NewScaledNumberType(30), model.NewScaledNumberType(0.5)},
+		"missing maximum": {model.NewScaledNumberType(21), model.NewScaledNumberType(5), nil, model.NewScaledNumberType(0.5)},
+		"missing step":    {model.NewScaledNumberType(21), model.NewScaledNumberType(5), model.NewScaledNumberType(30), nil},
+		"zero step":       {model.NewScaledNumberType(21), model.NewScaledNumberType(5), model.NewScaledNumberType(30), model.NewScaledNumberType(0)},
+		"reversed range":  {model.NewScaledNumberType(21), model.NewScaledNumberType(30), model.NewScaledNumberType(5), model.NewScaledNumberType(0.5)},
+	}
+
+	for name, test := range tests {
+		s.Run(name, func() {
+			s.addCompleteRoomAirSetpointState()
+			s.updateSetpointState(test.value, test.minimum, test.maximum, test.step)
+
+			state, err := s.sut.State(s.hvacRoomEntity)
+			assert.ErrorIs(s.T(), err, api.ErrDataNotAvailable)
+			assert.Zero(s.T(), state)
+		})
+	}
+}
+
+func (s *CaCRHTSuite) Test_StateRejectsSeveralDistinctRoomAirSetpoints() {
+	s.addCompleteRoomAirSetpointState()
+
+	hvacFeature := s.remoteDevice.FeatureByEntityTypeAndRole(s.hvacRoomEntity, model.FeatureTypeTypeHvac, model.RoleTypeServer)
+	relations := &model.HvacSystemFunctionSetpointRelationListDataType{
+		HvacSystemFunctionSetpointRelationData: []model.HvacSystemFunctionSetpointRelationDataType{
+			{SystemFunctionId: util.Ptr(model.HvacSystemFunctionIdType(1)), SetpointId: []model.SetpointIdType{1}},
+			{SystemFunctionId: util.Ptr(model.HvacSystemFunctionIdType(1)), SetpointId: []model.SetpointIdType{2}},
+		},
+	}
+	_, fErr := hvacFeature.UpdateData(true, model.FunctionTypeHvacSystemFunctionSetPointRelationListData, relations, nil, nil)
+	assert.Nil(s.T(), fErr)
+
+	setpointFeature := s.remoteDevice.FeatureByEntityTypeAndRole(s.hvacRoomEntity, model.FeatureTypeTypeSetpoint, model.RoleTypeServer)
+	descriptions := &model.SetpointDescriptionListDataType{SetpointDescriptionData: []model.SetpointDescriptionDataType{
+		{SetpointId: util.Ptr(model.SetpointIdType(1)), ScopeType: util.Ptr(model.ScopeTypeTypeRoomAirTemperature)},
+		{SetpointId: util.Ptr(model.SetpointIdType(2)), ScopeType: util.Ptr(model.ScopeTypeTypeRoomAirTemperature)},
+	}}
+	_, fErr = setpointFeature.UpdateData(true, model.FunctionTypeSetpointDescriptionListData, descriptions, nil, nil)
+	assert.Nil(s.T(), fErr)
+
+	state, stateErr := s.sut.State(s.hvacRoomEntity)
+	assert.ErrorIs(s.T(), stateErr, api.ErrDataNotAvailable)
+	assert.Zero(s.T(), state)
+}
+
 func (s *CaCRHTSuite) Test_WriteSetpoint() {
 	_, err := s.sut.WriteSetpoint(s.mockRemoteEntity, ucapi.HvacOperationModeTypeEco, 19, nil)
 	assert.NotNil(s.T(), err)
@@ -213,5 +287,65 @@ func (s *CaCRHTSuite) addSetpointData() {
 		},
 	}
 	_, fErr = rFeature.UpdateData(true, model.FunctionTypeSetpointConstraintsListData, constraintsData, nil, nil)
+	assert.Nil(s.T(), fErr)
+}
+
+func (s *CaCRHTSuite) addCompleteRoomAirSetpointState() {
+	s.addHvacData()
+
+	hvacFeature := s.remoteDevice.FeatureByEntityTypeAndRole(s.hvacRoomEntity, model.FeatureTypeTypeHvac, model.RoleTypeServer)
+	relations := &model.HvacSystemFunctionSetpointRelationListDataType{
+		HvacSystemFunctionSetpointRelationData: []model.HvacSystemFunctionSetpointRelationDataType{
+			{
+				SystemFunctionId: util.Ptr(model.HvacSystemFunctionIdType(1)),
+				OperationModeId:  util.Ptr(model.HvacOperationModeIdType(1)),
+				SetpointId:       []model.SetpointIdType{1},
+			},
+			{
+				SystemFunctionId: util.Ptr(model.HvacSystemFunctionIdType(1)),
+				OperationModeId:  util.Ptr(model.HvacOperationModeIdType(2)),
+				SetpointId:       []model.SetpointIdType{1},
+			},
+		},
+	}
+	_, fErr := hvacFeature.UpdateData(true, model.FunctionTypeHvacSystemFunctionSetPointRelationListData, relations, nil, nil)
+	assert.Nil(s.T(), fErr)
+
+	setpointFeature := s.remoteDevice.FeatureByEntityTypeAndRole(s.hvacRoomEntity, model.FeatureTypeTypeSetpoint, model.RoleTypeServer)
+	descriptions := &model.SetpointDescriptionListDataType{SetpointDescriptionData: []model.SetpointDescriptionDataType{{
+		SetpointId: util.Ptr(model.SetpointIdType(1)),
+		ScopeType:  util.Ptr(model.ScopeTypeTypeRoomAirTemperature),
+	}}}
+	_, fErr = setpointFeature.UpdateData(true, model.FunctionTypeSetpointDescriptionListData, descriptions, nil, nil)
+	assert.Nil(s.T(), fErr)
+
+	s.updateSetpointState(
+		model.NewScaledNumberType(21),
+		model.NewScaledNumberType(5),
+		model.NewScaledNumberType(30),
+		model.NewScaledNumberType(0.5),
+	)
+}
+
+func (s *CaCRHTSuite) updateSetpointState(
+	value *model.ScaledNumberType,
+	minimum *model.ScaledNumberType,
+	maximum *model.ScaledNumberType,
+	step *model.ScaledNumberType,
+) {
+	setpointFeature := s.remoteDevice.FeatureByEntityTypeAndRole(s.hvacRoomEntity, model.FeatureTypeTypeSetpoint, model.RoleTypeServer)
+	setpoints := &model.SetpointListDataType{SetpointData: []model.SetpointDataType{{
+		SetpointId: util.Ptr(model.SetpointIdType(1)),
+		Value:      value,
+	}}}
+	_, fErr := setpointFeature.UpdateData(true, model.FunctionTypeSetpointListData, setpoints, nil, nil)
+	assert.Nil(s.T(), fErr)
+	constraints := &model.SetpointConstraintsListDataType{SetpointConstraintsData: []model.SetpointConstraintsDataType{{
+		SetpointId:       util.Ptr(model.SetpointIdType(1)),
+		SetpointRangeMin: minimum,
+		SetpointRangeMax: maximum,
+		SetpointStepSize: step,
+	}}}
+	_, fErr = setpointFeature.UpdateData(true, model.FunctionTypeSetpointConstraintsListData, constraints, nil, nil)
 	assert.Nil(s.T(), fErr)
 }

@@ -1,6 +1,8 @@
 package crht
 
 import (
+	"math"
+
 	"github.com/enbility/eebus-go/api"
 	"github.com/enbility/eebus-go/features/client"
 	ucapi "github.com/enbility/eebus-go/usecases/api"
@@ -9,6 +11,92 @@ import (
 	"github.com/enbility/spine-go/model"
 	"github.com/enbility/spine-go/util"
 )
+
+// State returns the complete room-air temperature setpoint selected for CRHT.
+// A setpoint referenced by several operation modes is considered once. The
+// method deliberately fails closed when the remote cache is incomplete or
+// when several distinct room-air temperature setpoints remain, because the
+// client cannot safely choose one of them for a single-zone product model.
+func (e *CRHT) State(entity spineapi.EntityRemoteInterface) (ucapi.RoomHeatingSetpointState, error) {
+	if !e.IsCompatibleEntityType(entity) {
+		return ucapi.RoomHeatingSetpointState{}, api.ErrNoCompatibleEntity
+	}
+
+	ids, err := e.roomAirTemperatureSetpointIds(entity)
+	if err != nil || len(ids) != 1 {
+		return ucapi.RoomHeatingSetpointState{}, api.ErrDataNotAvailable
+	}
+
+	sp, err := client.NewSetpoint(e.LocalEntity, entity)
+	if err != nil {
+		return ucapi.RoomHeatingSetpointState{}, err
+	}
+	data, err := sp.GetSetpointForId(ids[0])
+	if err != nil || data == nil || data.Value == nil {
+		return ucapi.RoomHeatingSetpointState{}, api.ErrDataNotAvailable
+	}
+	constraints, err := sp.GetSetpointConstraintsForId(ids[0])
+	if err != nil || constraints == nil || constraints.SetpointRangeMin == nil ||
+		constraints.SetpointRangeMax == nil || constraints.SetpointStepSize == nil {
+		return ucapi.RoomHeatingSetpointState{}, api.ErrDataNotAvailable
+	}
+
+	value := data.Value.GetValue()
+	minimum := constraints.SetpointRangeMin.GetValue()
+	maximum := constraints.SetpointRangeMax.GetValue()
+	step := constraints.SetpointStepSize.GetValue()
+	if math.IsNaN(value) || math.IsInf(value, 0) ||
+		math.IsNaN(minimum) || math.IsInf(minimum, 0) ||
+		math.IsNaN(maximum) || math.IsInf(maximum, 0) ||
+		math.IsNaN(step) || math.IsInf(step, 0) || step <= 0 || minimum > maximum {
+		return ucapi.RoomHeatingSetpointState{}, api.ErrDataNotAvailable
+	}
+
+	return ucapi.RoomHeatingSetpointState{
+		Id:           uint(ids[0]),
+		Value:        value,
+		MinValue:     minimum,
+		MaxValue:     maximum,
+		StepSize:     step,
+		IsActive:     data.IsSetpointActive == nil || *data.IsSetpointActive,
+		IsChangeable: data.IsSetpointChangeable == nil || *data.IsSetpointChangeable,
+		IsWritable:   sp.IsSetpointListDataWritable(),
+	}, nil
+}
+
+func (e *CRHT) roomAirTemperatureSetpointIds(
+	entity spineapi.EntityRemoteInterface,
+) ([]model.SetpointIdType, error) {
+	relatedIds, err := e.setpointIds(entity)
+	if err != nil {
+		return nil, err
+	}
+	sp, err := client.NewSetpoint(e.LocalEntity, entity)
+	if err != nil {
+		return nil, err
+	}
+
+	seen := make(map[model.SetpointIdType]struct{}, len(relatedIds))
+	ids := make([]model.SetpointIdType, 0, len(relatedIds))
+	for _, id := range relatedIds {
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		description, err := sp.GetSetpointDescriptionForId(id)
+		if err != nil || description == nil || description.ScopeType == nil {
+			return nil, api.ErrDataNotAvailable
+		}
+		if *description.ScopeType != model.ScopeTypeTypeRoomAirTemperature {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return nil, api.ErrDataNotAvailable
+	}
+	return ids, nil
+}
 
 // Scenario 1
 
