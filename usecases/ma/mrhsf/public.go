@@ -96,7 +96,7 @@ func (e *MRHSF) systemFunctionId(entity spineapi.EntityRemoteInterface) (model.H
 		SystemFunctionType: util.Ptr(model.HvacSystemFunctionTypeTypeHeating),
 	}
 	descriptions, err := hvac.GetHvacSystemFunctionDescriptionsForFilter(descFilter)
-	if err != nil || len(descriptions) == 0 || descriptions[0].SystemFunctionId == nil {
+	if err != nil || len(descriptions) != 1 || descriptions[0].SystemFunctionId == nil {
 		return 0, api.ErrDataNotAvailable
 	}
 

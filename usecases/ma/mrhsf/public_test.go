@@ -1,6 +1,7 @@
 package mrhsf
 
 import (
+	"github.com/enbility/eebus-go/api"
 	ucapi "github.com/enbility/eebus-go/usecases/api"
 	"github.com/enbility/spine-go/model"
 	"github.com/enbility/spine-go/util"
@@ -38,6 +39,33 @@ func (s *MaMRHSFSuite) Test_CurrentOperationMode() {
 	data, err = s.sut.CurrentOperationMode(s.hvacRoomEntity)
 	assert.Nil(s.T(), err)
 	assert.Equal(s.T(), ucapi.HvacOperationModeTypeEco, data)
+}
+
+func (s *MaMRHSFSuite) Test_AmbiguousHeatingSystemFunctions() {
+	s.addHvacData()
+	rFeature := s.remoteDevice.FeatureByEntityTypeAndRole(s.hvacRoomEntity, model.FeatureTypeTypeHvac, model.RoleTypeServer)
+	descriptions := &model.HvacSystemFunctionDescriptionListDataType{
+		HvacSystemFunctionDescriptionData: []model.HvacSystemFunctionDescriptionDataType{
+			{
+				SystemFunctionId:   util.Ptr(model.HvacSystemFunctionIdType(1)),
+				SystemFunctionType: util.Ptr(model.HvacSystemFunctionTypeTypeHeating),
+			},
+			{
+				SystemFunctionId:   util.Ptr(model.HvacSystemFunctionIdType(2)),
+				SystemFunctionType: util.Ptr(model.HvacSystemFunctionTypeTypeHeating),
+			},
+		},
+	}
+	_, fErr := rFeature.UpdateData(true, model.FunctionTypeHvacSystemFunctionDescriptionListData, descriptions, nil, nil)
+	s.Require().Nil(fErr)
+
+	modes, err := s.sut.OperationModes(s.hvacRoomEntity)
+	s.ErrorIs(err, api.ErrDataNotAvailable)
+	s.Nil(modes)
+
+	mode, err := s.sut.CurrentOperationMode(s.hvacRoomEntity)
+	s.ErrorIs(err, api.ErrDataNotAvailable)
+	s.Empty(mode)
 }
 
 // helpers
